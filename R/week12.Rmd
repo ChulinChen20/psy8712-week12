@@ -1,0 +1,87 @@
+---
+title: "week12"
+author: "Chulin Chen"
+date: "2023-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+library(httr)
+library(jsonlite)
+library(lubridate)
+library(tm)
+```
+
+```{r}
+# the url of IOPsy with .json format
+url <- 'https://www.reddit.com/r/[IOPsychology]/new.json'
+
+url <- 'https://www.reddit.com/r/IOPsychology/.json?limit=1000&after=t31qa3v3&count=10'
+
+# get data 
+response <- GET(url, user_agent('Extracting data from Reddit'))
+
+# saves the data
+saveRDS(response, 'reddit_io.RDS')
+
+# importing the data that I have saved
+io_data <- readRDS('reddit_io.RDS')
+
+# exctracting the content from the response list
+io <- content(response, type = 'application/json')
+io_original_tbl<-io$data$children
+week12_tbl <- io_original_tbl %>%
+  select(data.ups,data.title) %>%
+  rename(upvotes=data.ups,title=data.title) 
+
+# Data Import and Cleaning
+# download and convert JSON data to an R object and extract the table from it
+io_original_tbl <-fromJSON('https://www.reddit.com/r/IOPsychology/.json?limit=1000&after=t31qa3v3&count=100',flatten=T)$data$children
+```
+
+```{r}
+# write function to get post info within last year, use loops to scroll down to next pages
+
+getAllPosts <- function() {
+    url <- "https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&limit=100"
+    extract <- fromJSON(url)
+      posts <- extract$data$children$data %>% select(name,ups,title,created) %>%
+          mutate(date=as_datetime(created))
+    after <- posts[nrow(posts),1]
+    url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
+    extract.next <- fromJSON(url.next)
+    posts.next <- extract.next$data$children$data
+
+    # execute while loop as long as there are any rows in the data frame
+    while (!is.null(nrow(posts.next))) {
+        posts.next <- posts.next %>% select(name,ups,title,created) %>%
+          mutate(date=as_datetime(created))
+        posts <- rbind(posts, posts.next)
+        after <- posts[nrow(posts),1]
+        url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
+        Sys.sleep(3)
+        extract <- fromJSON(url.next)
+        posts.next <- extract$data$children$data
+    }
+    
+    return(posts)
+}
+
+posts <- getAllPosts() 
+
+# extract and rename required variables
+week12_tbl<- posts %>%
+  select(ups,title) %>%
+  rename(upvotes=ups)
+
+# save data
+write.table(week12_tbl,"../data/week12.tbl")
+```
+
+```{r}
+#creat corpus
+week12_tbl<- read.table("../data/week12.tbl")
+io_corpus_original<- VCorpus(VectorSource(week12_tbl$title))
+```
+
