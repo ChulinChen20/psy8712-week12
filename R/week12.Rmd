@@ -162,7 +162,7 @@ week12_tbl_a<- as.data.frame(rowid_to_column(week12_tbl) )
 topics_tbl_1<- left_join(week12_tbl_a,lda_matrix,by=c("rowid"="doc_id"))
 
 topic_tbl <- topics_tbl_1 %>%
-  select(-upvotes,document) %>%
+  select(-upvotes,-document) %>%
   rename(doc_id = rowid, original = title, probability = gamma)
 
 # wordcloud
@@ -171,7 +171,7 @@ wordNames <- names(wordCounts)
 wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2.5,.5))
 
 final_tbl <- topics_tbl_1 %>%
-  select(-upvotes) %>%
+  select(-document) %>%
   rename(doc_id = rowid, original = title, probability = gamma)
 ```
 
