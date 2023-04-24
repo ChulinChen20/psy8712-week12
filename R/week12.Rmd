@@ -11,77 +11,86 @@ library(httr)
 library(jsonlite)
 library(lubridate)
 library(tm)
+library(qdap)
+library(tidytext)
+library(textstem)
 ```
 
-```{r}
-# the url of IOPsy with .json format
-url <- 'https://www.reddit.com/r/[IOPsychology]/new.json'
-
-url <- 'https://www.reddit.com/r/IOPsychology/.json?limit=1000&after=t31qa3v3&count=10'
-
-# get data 
-response <- GET(url, user_agent('Extracting data from Reddit'))
-
-# saves the data
-saveRDS(response, 'reddit_io.RDS')
-
-# importing the data that I have saved
-io_data <- readRDS('reddit_io.RDS')
-
-# exctracting the content from the response list
-io <- content(response, type = 'application/json')
-io_original_tbl<-io$data$children
-week12_tbl <- io_original_tbl %>%
-  select(data.ups,data.title) %>%
-  rename(upvotes=data.ups,title=data.title) 
-
-# Data Import and Cleaning
-# download and convert JSON data to an R object and extract the table from it
-io_original_tbl <-fromJSON('https://www.reddit.com/r/IOPsychology/.json?limit=1000&after=t31qa3v3&count=100',flatten=T)$data$children
-```
 
 ```{r}
 # write function to get post info within last year, use loops to scroll down to next pages
 
-getAllPosts <- function() {
-    url <- "https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&limit=100"
-    extract <- fromJSON(url)
-      posts <- extract$data$children$data %>% select(name,ups,title,created) %>%
-          mutate(date=as_datetime(created))
-    after <- posts[nrow(posts),1]
-    url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
-    extract.next <- fromJSON(url.next)
-    posts.next <- extract.next$data$children$data
-
-    # execute while loop as long as there are any rows in the data frame
-    while (!is.null(nrow(posts.next))) {
-        posts.next <- posts.next %>% select(name,ups,title,created) %>%
-          mutate(date=as_datetime(created))
-        posts <- rbind(posts, posts.next)
-        after <- posts[nrow(posts),1]
-        url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
-        Sys.sleep(3)
-        extract <- fromJSON(url.next)
-        posts.next <- extract$data$children$data
-    }
-    
-    return(posts)
-}
-
-posts <- getAllPosts() 
-
-# extract and rename required variables
-week12_tbl<- posts %>%
-  select(ups,title) %>%
-  rename(upvotes=ups)
-
-# save data
-write.table(week12_tbl,"../data/week12.tbl")
+# getAllPosts <- function() {
+#     url <- "https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&limit=100"
+#     extract <- fromJSON(url)
+#       posts <- extract$data$children$data %>% select(name,ups,title,created) %>%
+#           mutate(date=as_datetime(created))
+#     after <- posts[nrow(posts),1]
+#     url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
+#     extract.next <- fromJSON(url.next)
+#     posts.next <- extract.next$data$children$data
+# 
+# # execute while loop as long as there are any rows in the data frame
+#     while (!is.null(nrow(posts.next))) {
+#         posts.next <- posts.next %>% select(name,ups,title,created) %>%
+#           mutate(date=as_datetime(created))
+#         posts <- rbind(posts, posts.next)
+#         after <- posts[nrow(posts),1]
+#         url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
+#         Sys.sleep(3)
+#         extract <- fromJSON(url.next)
+#         posts.next <- extract$data$children$data
+#     }
+#     
+#     return(posts)
+# }
+# 
+# posts <- getAllPosts() 
+# 
+# # extract and rename required variables
+# week12_tbl<- posts %>%
+#   select(ups,title) %>%
+#   rename(upvotes=ups)
+# 
+# # save data
+# write.table(week12_tbl,"../data/week12.tbl")
 ```
 
 ```{r}
-#creat corpus
+#create corpus
 week12_tbl<- read.table("../data/week12.tbl")
 io_corpus_original<- VCorpus(VectorSource(week12_tbl$title))
+
+# replace abbreviation, contraction, lemmatization and convert to lowercase so that the same words in different forms can be treted as the same variable
+# remove numbers, punctuation, stopwords, and whitespace as they are not important for the prediction
+# the order of most processes does not matter a lot, 
+# except that replace abbreviation, contraction should come before stopword removal and lemmatization for words to be recognizable for the later two processes
+# and that remove 'io psychology' should come before removing punctuation so that "r" and "iopsychology" won't be combined
+io_corpus_1 <- io_corpus_original %>%
+  tm_map(content_transformer(replace_abbreviation)) %>%
+  tm_map(content_transformer(replace_contraction)) %>%
+  tm_map(content_transformer(str_to_lower)) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removeWords, c("io psychology", "iopsy", "iopsychology")) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(removeWords, stopwords("en")) %>%
+  tm_map(stripWhitespace) 
+
+# extract content for lemmatization and then restore the VCorpous
+a<- list()
+for (i in seq_along(io_corpus_1)) {
+    a[i] <- lemmatize_strings(gettext(io_corpus_1[[i]][[1]]))
+}
+io_corpus <- VCorpus(VectorSource(unlist(a))) 
+
+# compare corpus
+compare_them <- function(x,y) {
+  print(x$content[[6]]$content)
+  print(y$content[[6]]$content)
+}
+
+compare_them(io_corpus_original, io_corpus)
+
+tm_map(content_transformer(lemmatize_strings(io_corpus_original)))
 ```
 
