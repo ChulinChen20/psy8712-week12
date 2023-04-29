@@ -1,0 +1,206 @@
+---
+title: "week12"
+author: "Chulin Chen"
+date: "2023-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Script Settings and Resources
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+library(httr)
+library(jsonlite)
+library(lubridate)
+library(tm)
+library(qdap)
+library(tidytext)
+library(textstem)
+library(RWeka)
+library(topicmodels)
+library(ldatuning)
+library(wordcloud)
+```
+
+
+```{r}
+## Download data
+## write function to get post info within 2022, use loops to scroll down to next pages
+
+# getAllPosts <- function() {
+#     url <- "https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&limit=100"
+#     extract <- fromJSON(url)
+#       posts <- extract$data$children$data %>% select(name,ups,title,created) %>%
+#           mutate(date=as_datetime(created))
+#     after <- posts[nrow(posts),1]
+#     url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
+#     extract.next <- fromJSON(url.next)
+#     posts.next <- extract.next$data$children$data
+# 
+## execute while loop as long as there are any rows in the data frame
+#     while (!is.null(nrow(posts.next))) {
+#         posts.next <- posts.next %>% select(name,ups,title,created) %>%
+#           mutate(date=as_datetime(created))
+#         posts <- rbind(posts, posts.next)
+#         after <- posts[nrow(posts),1]
+#         url.next <- paste0("https://www.reddit.com/r/IOPsychology/.json?q=timestamp%3A1641016800..1672552800&after=",after,"&limit=100")
+#         Sys.sleep(3)
+#         extract <- fromJSON(url.next)
+#         posts.next <- extract$data$children$data
+#     }
+#     
+#     return(posts)
+# }
+# 
+# posts <- getAllPosts() 
+# 
+## extract and rename required variables
+# week12_tbl<- posts %>%
+#   select(ups,title) %>%
+#   rename(upvotes=ups)
+# 
+## save data
+# write.table(week12_tbl,"../data/week12.tbl")
+```
+
+```{r}
+# Data Import and Cleaning
+#create corpus
+week12_tbl<- read.table("../data/week12.tbl")
+io_corpus_original<- VCorpus(VectorSource(week12_tbl$title))
+
+# Replace abbreviation & contraction, lemmatization and convert to lowercase so that the same words in different forms can be treated as the same variable.
+# Remove punctuation, white spaces, numbers, non-characters, stopwords, strings with length less than 3, and any leftover special characters as they are not meaningful and important.
+# The order of most processes does not matter a lot, 
+# except that replace abbreviation/contraction should come before lemmatization for words to be recognizable, and also before removing strings with length < 3, so that meaningful abbreviation won't be filtered out and that meaningless words from expanded contractions can be filtered out.
+
+removeSpecialChars <- function(x) gsub("[\u201C\u201D\u2018\u2019\u2014]+","",x)
+
+io_corpus <- io_corpus_original %>%
+  tm_map(content_transformer(replace_abbreviation)) %>%
+  tm_map(content_transformer(replace_contraction)) %>%
+  tm_map(content_transformer(str_to_lower)) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(content_transformer(removeSpecialChars)) %>%
+  tm_map(removeWords, c("io psychology", "iopsy", "iopsych", "io psych", "iopsychology", "riopsychology", "organizational psychology", "industrial organizational psychology", "io", "i/o"))  %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removeWords, "[^a-z ]+") %>%
+  tm_map(removeWords, "\\b\\w{1,2}\\b") %>%
+  tm_map(removeWords, c(stopwords("en"))) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(content_transformer(lemmatize_strings))
+
+# compare corpus
+compare_them <- function(x,y) {
+  print(x$content[[20]]$content)
+  print(y$content[[20]]$content)
+}
+
+compare_them(io_corpus_original, io_corpus)
+```
+
+```{r}
+# create bigram dtm
+myTokenizer <- function(x) { 
+  NGramTokenizer(x, Weka_control(min=1, max=2)) 
+}
+
+DTM <- DocumentTermMatrix(
+  io_corpus,
+  control = list(tokenize = myTokenizer))
+
+io_dtm <-  as_tibble(as.matrix((DTM)))
+io_dtm
+
+# get n/k ratio (0.1853538)
+977/5271
+
+# remove sparse terms.
+DTM_slim <- DTM %>%
+  removeSparseTerms(.997)
+io_slim_dtm_1 <- rowid_to_column(as_tibble(as.matrix((DTM_slim)))) 
+
+# new n/k ratio (2.105603)
+977/464
+
+# remove documents in which non of the tokens occur
+# check number of empty entries
+rowTotals <- apply(io_slim_dtm_1[,2:328], 1, sum)
+table(rowTotals)
+io_slim_dtm_clean <- io_slim_dtm_1[rowTotals> 0, ] 
+
+# get io_slim_dtm document id
+doc_id <-io_slim_dtm_clean$rowid
+# get slim dtm matrix
+io_slim_dtm <- subset(io_slim_dtm_clean, select = -rowid)
+```
+
+```{r}
+# Analysis
+# find optimal topic numbers
+result <- FindTopicsNumber(
+  io_slim_dtm,
+  topics = seq(from = 2, to = 15, by = 1),
+  metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"),
+  method = "Gibbs",
+  control = list(seed = 77),
+  mc.cores = 2L,
+  verbose = TRUE
+)
+
+# visualize results.  
+FindTopicsNumber_plot(result)
+# Apart from CaoJuan2009, all other metrics are not informative
+# as the curves do not have a minimun/maximun point.
+# According to CaoJuan2009, the optimal number of topics should be 3.
+
+# Fit LDA model
+lda_out <- LDA(
+  io_slim_dtm,
+  k = 3,
+  method = "Gibbs",
+  control = list(seed = 42)
+)
+
+# Tidy the matrix of word probabilities
+lda_topics <- lda_out %>% 
+  tidy(matrix = "beta") %>% 
+  arrange(desc(beta))
+
+# Word with highest probabilities by topic
+lda_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n=15)
+
+# extract gamma matrix, assign topic to documents according to gamma
+# randomly select one topic in case that a document has the same 
+# gamma for all topics
+doc_topic <- lda_out %>% 
+  tidy(matrix = "gamma") %>%
+  group_by(document) %>%
+  slice_max(gamma,n=1)  %>%
+  sample_n(1) %>%
+  ungroup()
+
+# add original document id
+lda_matrix<- cbind(doc_id,doc_topic)
+
+# combine with the original dataset, keep documents with at least one tokens only
+final_tbl <- lda_matrix %>%
+  left_join(rowid_to_column(week12_tbl),by=c("doc_id"="rowid")) %>%
+  rename(original = title, probability = gamma) %>%
+  select(-document)
+
+topic_tbl <- select(final_tbl, -upvotes)
+
+# wordcloud
+wordCounts <- colSums(io_dtm)
+wordNames <- names(wordCounts)                          
+wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2.5,.5)) 
+
+final_tbl <- topics_tbl_1 %>%
+  select(-document) %>%
+  rename(original = title, probability = gamma) 
+```
+
+(1) I think the two topics do not differ a lot from each other. Topic one is more related to io career whilst topic 2 is more related to discussion.
+(2) Yes, the original posts seem to aligns with my interpretation. This should be face validity.
