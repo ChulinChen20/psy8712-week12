@@ -191,10 +191,10 @@ lda_matrix <- cbind(doc_id,doc_topic)
 final_tbl <- lda_matrix %>%
   left_join(rowid_to_column(week12_tbl),by=c("doc_id"="rowid")) %>%
   rename(original = title, probability = gamma) %>%
+  mutate(topic = as.factor(topic)) %>%
   select(-document)
 
 topic_tbl <- select(final_tbl, -upvotes)
-final_tbl[5,5]
 ```
 
 (1) I think topic 1 is more related to I/O graduate programs/certificates/research/study, topic 2 is more related to I/O career, topic 3 is more related to biweekly discussions on "What have you been reading, and what do you think of it" and other general discussions.
@@ -208,3 +208,11 @@ wordNames <- names(wordCounts)
 wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2,.5)) 
 ```
 
+```{r}
+# Finally analysis
+# As there are three independent groups, I will use anova
+aov_topic <- aov(upvotes ~ topic, data = final_tbl)
+summary(aov_topic)
+TukeyHSD(aov_topic)
+```
+No significant differences in upvotes across topics.
