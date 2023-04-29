@@ -125,7 +125,7 @@ io_slim_dtm_1 <- rowid_to_column(as_tibble(as.matrix((DTM_slim))))
 # new n/k ratio (2.105603)
 977/464
 
-# remove documents in which non of the tokens occur
+# remove documents in which none of the tokens occur.
 # check number of empty entries
 rowTotals <- apply(io_slim_dtm_1[,2:328], 1, sum)
 table(rowTotals)
