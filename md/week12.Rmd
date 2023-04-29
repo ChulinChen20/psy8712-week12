@@ -196,10 +196,6 @@ topic_tbl <- select(final_tbl, -upvotes)
 wordCounts <- colSums(io_dtm)
 wordNames <- names(wordCounts)                          
 wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2.5,.5)) 
-
-final_tbl <- topics_tbl_1 %>%
-  select(-document) %>%
-  rename(original = title, probability = gamma) 
 ```
 
 (1) I think the two topics do not differ a lot from each other. Topic one is more related to io career whilst topic 2 is more related to discussion.
