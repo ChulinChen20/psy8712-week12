@@ -8,12 +8,14 @@ output: html_document
 ```{r setup, include=FALSE}
 # Script Settings and Resources
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+library(tidyverse)
 library(httr)
 library(jsonlite)
 library(lubridate)
 library(tm)
 library(qdap)
 library(tidytext)
+library(stringr)
 library(textstem)
 library(RWeka)
 library(topicmodels)
@@ -91,8 +93,9 @@ io_corpus <- io_corpus_original %>%
 
 # compare corpus
 compare_them <- function(x,y) {
-  print(x$content[[20]]$content)
-  print(y$content[[20]]$content)
+  i <- sample.int(length(x), 1)
+  print(x$content[[i]]$content)
+  print(y$content[[i]]$content)
 }
 
 compare_them(io_corpus_original, io_corpus)
@@ -169,7 +172,7 @@ lda_topics <- lda_out %>%
 # Word with highest probabilities by topic
 lda_topics %>%
   group_by(topic) %>%
-  slice_max(beta, n=15)
+  slice_max(beta, n=10)
 
 # extract gamma matrix, assign topic to documents according to gamma
 # randomly select one topic in case that a document has the same 
@@ -182,7 +185,7 @@ doc_topic <- lda_out %>%
   ungroup()
 
 # add original document id
-lda_matrix<- cbind(doc_id,doc_topic)
+lda_matrix <- cbind(doc_id,doc_topic)
 
 # combine with the original dataset, keep documents with at least one tokens only
 final_tbl <- lda_matrix %>%
@@ -191,12 +194,17 @@ final_tbl <- lda_matrix %>%
   select(-document)
 
 topic_tbl <- select(final_tbl, -upvotes)
+final_tbl[5,5]
+```
 
+(1) I think topic 1 is more related to I/O graduate programs/certificates/research/study, topic 2 is more related to I/O career, topic 3 is more related to biweekly discussions on "What have you been reading, and what do you think of it" and other general discussions.
+(2) Yes, most of the original posts aligns with my interpretation. This should be content validity.
+
+```{r}
+# visualization
 # wordcloud
 wordCounts <- colSums(io_dtm)
 wordNames <- names(wordCounts)                          
-wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2.5,.5)) 
+wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2,.5)) 
 ```
 
-(1) I think the two topics do not differ a lot from each other. Topic one is more related to io career whilst topic 2 is more related to discussion.
-(2) Yes, the original posts seem to aligns with my interpretation. This should be face validity.
