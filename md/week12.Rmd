@@ -207,6 +207,7 @@ wordCounts <- colSums(io_dtm)
 wordNames <- names(wordCounts)                          
 wordcloud(wordNames, wordCounts,max.words =50,min.freq=3,scale=c(2,.5)) 
 ```
+From the relative size of the words, we can see that job and career are the most frequently discussed topics. Academic discussions might also be popular based on the frequencies of words associated with research and discussion.
 
 ```{r}
 # Finally analysis
