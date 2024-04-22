@@ -21,6 +21,7 @@ library(RWeka)
 library(topicmodels)
 library(ldatuning)
 library(wordcloud)
+library(caret)
 ```
 
 
@@ -211,9 +212,38 @@ From the relative size of the words, we can see that job and career are the most
 
 ```{r}
 # Finally analysis
-# As there are three independent groups, I will use anova
+# Statistical analysis: As there are three independent groups, I will use anova
 aov_topic <- aov(upvotes ~ topic, data = final_tbl)
 summary(aov_topic)
 TukeyHSD(aov_topic)
 ```
 No significant differences in upvotes across topics.
+
+```{r}
+# ML: use a classification model with "topic" as a categorical outcome variable and "upvotes" as the independent variable
+
+# split into train and test data
+split <- sample(1:nrow(final_tbl), .75*nrow(final_tbl))
+
+train <- final_tbl[split, ]
+
+test <- final_tbl[-split, ]
+
+# Train a Random Forest model
+rf_model <- train(topic ~ upvotes, 
+                  data = train, 
+                  method = "rf", 
+                  tuneGrid = expand.grid(mtry=1),
+                  trControl = trainControl(method = "cv", number = 5))
+
+# Print cross-validation results
+rf_model
+
+# Make holdout predictions
+holdout_predictions <- predict(rf_model, newdata = test)
+
+# Evaluate performance on holdout data
+accuracy <- confusionMatrix(holdout_predictions, test_data$topic)$overall['Accuracy']
+accuracy
+```
+Both cross-validation and holdout prediction show an accuracy close to classification by chance, which means no difference in upvotes across topics.
